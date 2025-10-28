@@ -1,9 +1,7 @@
 // src/auth/jwt.strategy.ts
 
 import { Injectable } from '@nestjs/common';
-import { PassportStrategy } from '@nestjs/passport';
-import { ExtractJwt, Strategy } from 'passport-jwt';
-import { ConfigService } from '@nestjs/config';
+import { AuthGuard } from '@nestjs/passport';
 
 interface JwtPayload {
   sub: number;
@@ -18,20 +16,12 @@ export interface UserPayload {
 }
 
 @Injectable()
-export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private configService: ConfigService) {
-    super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      ignoreExpiration: false,
-      secretOrKey: configService.get('jwtSecret'),
-    });
-  }
-
-  async validate(payload: JwtPayload): Promise<UserPayload> {
-    return {
-      userId: payload.sub,
-      email: payload.email,
-      role: payload.role,
-    };
-  }
+export class JwtStrategy extends AuthGuard('jwt') {
+    constructor(){super({})}
 }
+
+@Injectable()
+export class JwtAuthGuard extends AuthGuard('jwt') { // <-- Chữ 'export' phải ở đây
+    constructor(){super({})}
+  };
+
