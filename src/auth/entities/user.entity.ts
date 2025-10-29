@@ -10,11 +10,11 @@ export class User {
   email: string;
 
   @Column()
-  password: string;  // Hashed bằng bcrypt
+  password: string; // Hashed bằng bcrypt
 
   @Column({ default: 'user' })
   role: string;
 
-  @OneToMany(() => Todo, todo => todo.user)
+  @OneToMany(() => Todo, (todo) => todo.user)
   todos: Todo[];
 }

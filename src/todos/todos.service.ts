@@ -1,16 +1,16 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { Todo } from "./entities/todo.entity";
-import { CreateTodoDto } from "./dto/create-todo.dto";
-import { UpdateTodoDto } from "./dto/update-todo.dto";
-import type { JwtUser } from "../auth/interfaces/jwt-user.interface"; // Fix: Thêm 'type'
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Todo } from './entities/todo.entity';
+import { CreateTodoDto } from './dto/create-todo.dto';
+import { UpdateTodoDto } from './dto/update-todo.dto';
+import type { JwtUser } from '../auth/interfaces/jwt-user.interface'; // Fix: Thêm 'type'
 
 @Injectable()
 export class TodosService {
   constructor(
     @InjectRepository(Todo)
-    private todoRepository: Repository<Todo>
+    private todoRepository: Repository<Todo>,
   ) {}
 
   async findAll(user: JwtUser) {
@@ -39,7 +39,7 @@ export class TodosService {
     await this.findOne(id, user);
     await this.todoRepository.update(
       { id, user: { id: user.userId } },
-      updateTodoDto
+      updateTodoDto,
     );
     return this.findOne(id, user);
   }

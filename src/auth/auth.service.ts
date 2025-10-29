@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -16,13 +20,19 @@ export class AuthService {
 
   async register(createUserDto: CreateUserDto) {
     const { email, password } = createUserDto;
-    const existingUser = await this.userRepository.findOne({ where: { email } });
+    const existingUser = await this.userRepository.findOne({
+      where: { email },
+    });
     if (existingUser) {
       throw new ConflictException('Email đã tồn tại!');
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = this.userRepository.create({ email, password: hashedPassword, role: 'user' });
+    const user = this.userRepository.create({
+      email,
+      password: hashedPassword,
+      role: 'user',
+    });
     await this.userRepository.save(user);
 
     const payload = { sub: user.id, email: user.email, role: user.role };

@@ -22,10 +22,7 @@ import { User } from './entities/user.entity';
       inject: [ConfigService],
     }),
   ],
-  providers: [
-    AuthService,
-    JwtStrategy,
-  ],
+  providers: [AuthService, JwtStrategy],
   controllers: [AuthController],
   exports: [JwtStrategy, JwtModule, AuthService],
 })

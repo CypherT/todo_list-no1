@@ -1,9 +1,9 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from "typeorm";
-import { User } from "../../auth/entities/user.entity"; // Fix: Path tương đối (từ todos/ lên auth/)
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
+import { User } from '../../auth/entities/user.entity'; // Fix: Path tương đối (từ todos/ lên auth/)
 
-@Entity("todos")
+@Entity('todos')
 export class Todo {
-  @PrimaryGeneratedColumn("uuid")
+  @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column()
