@@ -1,0 +1,81 @@
+{
+  "info": {
+    "name": "Todo API Collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get All Todos",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/todos",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["todos"]
+        }
+      }
+    },
+    {
+      "name": "Create Todo",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Học NestJS\",\n  \"completed\": false\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/todos",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["todos"]
+        }
+      }
+    },
+    {
+      "name": "Update Todo",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"completed\": true\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/todos/1",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["todos", "1"]
+        }
+      }
+    },
+    {
+      "name": "Delete Todo",
+      "request": {
+        "method": "DELETE",
+        "url": {
+          "raw": "http://localhost:3000/todos/1",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["todos", "1"]
+        }
+      }
+    }
+  ]
+}
