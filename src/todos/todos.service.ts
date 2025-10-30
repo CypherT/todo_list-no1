@@ -7,8 +7,13 @@ import { UpdateTodoDto } from './dto/update-todo.dto';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { RedisService } from '../redis/redis.service';
 
+/**
+ * Service xử lý logic business cho Todo, tích hợp TypeORM, Redis cache, và WebSocket broadcast.
+ */
 @Injectable()
 export class TodosService {
+  private readonly CACHE_TTL = 3600; // 1 giờ
+
   constructor(
     @InjectRepository(Todo)
     private readonly todoRepository: Repository<Todo>,
@@ -16,16 +21,23 @@ export class TodosService {
     private readonly redisService: RedisService,
   ) {}
 
+  /**
+   * Tạo todo mới, cache vào Redis, và broadcast qua WebSocket.
+   */
   async create(createTodoDto: CreateTodoDto): Promise<Todo> {
     const todo = this.todoRepository.create(createTodoDto);
     const savedTodo = await this.todoRepository.save(todo);
 
-    // Cache todo trong Redis (TTL 1 giờ)
-    await this.redisService.set(
-      `todo:${savedTodo.id}`,
-      JSON.stringify(savedTodo),
-      3600,
-    );
+    // Cache todo trong Redis
+    try {
+      await this.redisService.set(
+        `todo:${savedTodo.id}`,
+        JSON.stringify(savedTodo),
+        this.CACHE_TTL,
+      );
+    } catch (cacheError) {
+      console.warn(`Lỗi lưu cache cho todo mới ${savedTodo.id}:`, cacheError);
+    }
 
     // Broadcast qua WebSocket
     this.websocketGateway.emitTodoCreated(savedTodo);
@@ -33,44 +45,90 @@ export class TodosService {
     return savedTodo;
   }
 
+  /**
+   * Tìm todo theo ID, ưu tiên cache Redis.
+   */
   async findOne(id: number): Promise<Todo> {
-    // Kiểm tra cache trước
-    const cached = await this.redisService.get(`todo:${id}`);
-    if (cached) {
-      return JSON.parse(cached);
+    const cacheKey = `todo:${id}`;
+    let cached: string | null;
+
+    try {
+      cached = await this.redisService.get(cacheKey);
+    } catch (error) {
+      console.warn(`Lỗi đọc cache Redis cho key ${cacheKey}:`, error);
+      cached = null;
     }
 
-    const todo = await this.todoRepository.findOne({ where: { id } });
+    if (cached) {
+      try {
+        // Parse và cast về Todo type để fix ESLint (type-safe)
+        const parsedTodo = JSON.parse(cached) as Todo;
+
+        // Optional: Validate thêm nếu cần (ví dụ: kiểm tra id khớp)
+        if (parsedTodo.id === id) {
+          return parsedTodo; // Bây giờ return Todo, không phải any
+        }
+      } catch (parseError) {
+        console.warn(
+          `Lỗi parse JSON từ cache cho key ${cacheKey}:`,
+          parseError,
+        );
+        // Fallback: Xóa cache hỏng và lấy từ DB
+        try {
+          await this.redisService.del(cacheKey);
+        } catch (delError) {
+          console.warn(`Lỗi xóa cache hỏng cho key ${cacheKey}:`, delError);
+        }
+      }
+    }
+
+    // Fallback luôn về DB nếu cache fail
+    const todo = await this.todoRepository.findOneBy({ id });
 
     if (!todo) {
       throw new NotFoundException('Todo không tồn tại!');
     }
 
-    // Lưu vào cache
-    await this.redisService.set(`todo:${id}`, JSON.stringify(todo), 3600);
+    // Lưu vào cache (với error handling)
+    try {
+      await this.redisService.set(
+        cacheKey,
+        JSON.stringify(todo),
+        this.CACHE_TTL,
+      );
+    } catch (cacheError) {
+      console.warn(`Lỗi lưu cache cho todo ${id}:`, cacheError);
+    }
 
     return todo;
   }
 
+  /**
+   * Cập nhật todo, invalidate cache, và broadcast qua WebSocket.
+   */
   async update(id: number, updateTodoDto: UpdateTodoDto): Promise<Todo> {
-    const result = await this.todoRepository.update(id, updateTodoDto);
+    const existingTodo = await this.todoRepository.findOneBy({ id });
 
-    if (result.affected === 0) {
+    if (!existingTodo) {
       throw new NotFoundException('Không tìm thấy todo để cập nhật!');
     }
 
-    const updatedTodo = await this.todoRepository.findOne({ where: { id } });
+    // Merge changes với preload để hiệu quả hơn
+    Object.assign(existingTodo, updateTodoDto);
+    const updatedTodo = await this.todoRepository.save(existingTodo);
 
-    if (!updatedTodo) {
-      throw new NotFoundException('Todo không tồn tại!');
-    }
+    const cacheKey = `todo:${id}`;
 
     // Cập nhật cache
-    await this.redisService.set(
-      `todo:${id}`,
-      JSON.stringify(updatedTodo),
-      3600,
-    );
+    try {
+      await this.redisService.set(
+        cacheKey,
+        JSON.stringify(updatedTodo),
+        this.CACHE_TTL,
+      );
+    } catch (cacheError) {
+      console.warn(`Lỗi cập nhật cache cho todo ${id}:`, cacheError);
+    }
 
     // Broadcast qua WebSocket
     this.websocketGateway.emitTodoUpdated(updatedTodo);
@@ -78,15 +136,26 @@ export class TodosService {
     return updatedTodo;
   }
 
+  /**
+   * Xóa todo, remove cache, và broadcast qua WebSocket.
+   */
   async remove(id: number): Promise<{ message: string }> {
-    const result = await this.todoRepository.delete(id);
+    const existingTodo = await this.todoRepository.findOneBy({ id });
 
-    if (result.affected === 0) {
+    if (!existingTodo) {
       throw new NotFoundException('Todo không tồn tại!');
     }
 
+    await this.todoRepository.remove(existingTodo); // Sử dụng remove thay delete để trigger events nếu có
+
+    const cacheKey = `todo:${id}`;
+
     // Xóa khỏi cache
-    await this.redisService.del(`todo:${id}`);
+    try {
+      await this.redisService.del(cacheKey);
+    } catch (cacheError) {
+      console.warn(`Lỗi xóa cache cho todo ${id}:`, cacheError);
+    }
 
     // Broadcast qua WebSocket
     this.websocketGateway.emitTodoDeleted(id);
