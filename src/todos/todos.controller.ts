@@ -2,55 +2,54 @@ import {
   Controller,
   Get,
   Post,
-  Put,
-  Delete,
   Body,
+  Patch,
   Param,
-  UseGuards,
+  Delete,
+  Query,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TodosService } from './todos.service';
+import { FindAllTodosService } from './services/find-all-todos.service';
 import { CreateTodoDto } from './dto/create-todo.dto';
 import { UpdateTodoDto } from './dto/update-todo.dto';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import type { JwtUser } from '../auth/interfaces/jwt-user.interface'; // Fix: Thêm 'type' để import type-only
+import { TodoResponse } from './interfaces/todo-response.interface';
+import { PaginatedTodosResponse } from './interfaces/paginated-todos.interface';
 
 @Controller('todos')
-@UseGuards(JwtAuthGuard)
 export class TodosController {
-  constructor(private todosService: TodosService) {}
+  constructor(
+    private readonly todosService: TodosService,
+    private readonly findAllTodosService: FindAllTodosService,
+  ) {}
 
   @Get()
-  async findAll(@CurrentUser() user: JwtUser) {
-    // Giờ TS happy với type import
-    return this.todosService.findAll(user);
+  async findAll(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 50,
+  ): Promise<PaginatedTodosResponse> {
+    return this.findAllTodosService.findAll(page, limit);
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string, @CurrentUser() user: JwtUser) {
-    return this.todosService.findOne(id, user);
+  async findOne(@Param('id') id: string): Promise<TodoResponse> {
+    return this.todosService.findOne(+id);
   }
 
   @Post()
-  async create(
-    @Body() createTodoDto: CreateTodoDto,
-    @CurrentUser() user: JwtUser,
-  ) {
-    return this.todosService.create(createTodoDto, user);
+  async create(@Body() createTodoDto: CreateTodoDto): Promise<TodoResponse> {
+    return this.todosService.create(createTodoDto);
   }
 
-  @Put(':id')
+  @Patch(':id')
   async update(
     @Param('id') id: string,
     @Body() updateTodoDto: UpdateTodoDto,
-    @CurrentUser() user: JwtUser,
-  ) {
-    return this.todosService.update(id, updateTodoDto, user);
+  ): Promise<TodoResponse> {
+    return this.todosService.update(+id, updateTodoDto);
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string, @CurrentUser() user: JwtUser) {
-    const result = await this.todosService.remove(id, user);
-    return { message: 'Todo đã xóa thành công', id, data: result };
+  async remove(@Param('id') id: string): Promise<TodoResponse> {
+    return this.todosService.remove(+id);
   }
 }

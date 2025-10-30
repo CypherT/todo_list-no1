@@ -1,20 +1,20 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
-import { Todo } from '../../todos/entities/todo.entity';
+import { RefreshToken } from './refresh-token.entity';
 
 @Entity('users')
 export class User {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryGeneratedColumn()
+  id: number;
 
   @Column({ unique: true })
   email: string;
 
   @Column()
-  password: string; // Hashed bằng bcrypt
+  password: string;
 
   @Column({ default: 'user' })
   role: string;
 
-  @OneToMany(() => Todo, (todo) => todo.user)
-  todos: Todo[];
+  @OneToMany(() => RefreshToken, (refreshToken) => refreshToken.user)
+  refreshTokens: RefreshToken[];
 }

@@ -1,11 +1,12 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { User } from '../../entities/user.entity';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
-  handleRequest(err: any, user: any) {
+  handleRequest<TUser = User>(err: Error | null, user: TUser | false): TUser {
     if (err || !user) {
-      throw new UnauthorizedException('Token không hợp lệ hoặc hết hạn!');
+      throw err || new UnauthorizedException('Unauthorized access');
     }
     return user;
   }

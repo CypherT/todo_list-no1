@@ -1,10 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Todo } from './entities/todo.entity';
+import { Todo } from '../entities/todo.entity';
 import { CreateTodoDto } from './dto/create-todo.dto';
 import { UpdateTodoDto } from './dto/update-todo.dto';
-import type { JwtUser } from '../auth/interfaces/jwt-user.interface'; // Fix: Thêm 'type'
+
+export interface TodoResponse {
+  ok: 1 | 0;
+  t: 'success' | 'error';
+  d?: Todo | null;
+  e?: string;
+}
 
 @Injectable()
 export class TodosService {
@@ -13,40 +19,59 @@ export class TodosService {
     private todoRepository: Repository<Todo>,
   ) {}
 
-  async findAll(user: JwtUser) {
-    return this.todoRepository.find({ where: { user: { id: user.userId } } });
-  }
-
-  async findOne(id: string, user: JwtUser) {
-    const todo = await this.todoRepository.findOne({
-      where: { id, user: { id: user.userId } },
-    });
-    if (!todo) {
-      throw new NotFoundException(`Todo với ID ${id} không tồn tại!`);
+  async create(createTodoDto: CreateTodoDto): Promise<TodoResponse> {
+    try {
+      const todo = this.todoRepository.create(createTodoDto); // create returns Partial<Todo>, but since DTO matches, it's Todo
+      const savedTodo = await this.todoRepository.save(todo);
+      return { ok: 1, t: 'success', d: savedTodo };
+    } catch (error: unknown) {
+      // Fix: unknown
+      const err = error as Error;
+      return { ok: 0, t: 'error', e: err.message };
     }
-    return todo;
   }
 
-  async create(createTodoDto: CreateTodoDto, user: JwtUser) {
-    const newTodo = this.todoRepository.create({
-      ...createTodoDto,
-      user: { id: user.userId },
-    });
-    return this.todoRepository.save(newTodo);
+  async findOne(id: number): Promise<TodoResponse> {
+    try {
+      const todo = await this.todoRepository.findOne({ where: { id } });
+      if (!todo) {
+        return { ok: 0, t: 'error', e: 'Todo không tồn tại!' };
+      }
+      return { ok: 1, t: 'success', d: todo };
+    } catch (error: unknown) {
+      const err = error as Error;
+      return { ok: 0, t: 'error', e: err.message };
+    }
   }
 
-  async update(id: string, updateTodoDto: UpdateTodoDto, user: JwtUser) {
-    await this.findOne(id, user);
-    await this.todoRepository.update(
-      { id, user: { id: user.userId } },
-      updateTodoDto,
-    );
-    return this.findOne(id, user);
+  async update(
+    id: number,
+    updateTodoDto: UpdateTodoDto,
+  ): Promise<TodoResponse> {
+    try {
+      const result = await this.todoRepository.update(id, updateTodoDto);
+      if (result.affected === 0) {
+        return { ok: 0, t: 'error', e: 'Không tìm thấy todo để cập nhật!' };
+      }
+
+      const updatedTodo = await this.todoRepository.findOne({ where: { id } });
+      return { ok: 1, t: 'success', d: updatedTodo };
+    } catch (error: unknown) {
+      const err = error as Error;
+      return { ok: 0, t: 'error', e: err.message };
+    }
   }
 
-  async remove(id: string, user: JwtUser) {
-    const todo = await this.findOne(id, user);
-    await this.todoRepository.remove(todo);
-    return todo;
+  async remove(id: number): Promise<TodoResponse> {
+    try {
+      const result = await this.todoRepository.delete(id);
+      if (result.affected === 0) {
+        return { ok: 0, t: 'error', e: 'Todo không tồn tại!' };
+      }
+      return { ok: 1, t: 'success', d: null };
+    } catch (error: unknown) {
+      const err = error as Error;
+      return { ok: 0, t: 'error', e: err.message };
+    }
   }
 }

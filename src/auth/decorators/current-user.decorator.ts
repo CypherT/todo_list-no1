@@ -1,10 +1,10 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import { JwtUser } from '../interfaces/jwt-user.interface'; // Import mới
+import { Request } from 'express'; // Import Request from express
+import { User } from '../../entities/user.entity';
 
 export const CurrentUser = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext): JwtUser => {
-    // Type JwtUser
-    const request = ctx.switchToHttp().getRequest();
-    return request.user; // User từ JwtStrategy's validate()
+  (data: unknown, ctx: ExecutionContext): User | undefined => {
+    const request = ctx.switchToHttp().getRequest<Request>(); // Fixed: Type request as Request
+    return request.user as User | undefined; // Fixed: request.user typed
   },
 );

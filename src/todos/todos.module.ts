@@ -1,15 +1,13 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { TodosController } from './todos.controller';
 import { TodosService } from './todos.service';
-import { Todo } from './entities/todo.entity';
-import { User } from '../auth/entities/user.entity'; // Thêm: Import User nếu dùng ở service
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { TodosController } from './todos.controller';
+import { Todo } from '../entities/todo.entity';
+import { FindAllTodosService } from './services/find-all-todos.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Todo, User])], // Thêm User vào forFeature nếu cần query user
+  imports: [TypeOrmModule.forFeature([Todo])],
   controllers: [TodosController],
-  providers: [TodosService, JwtAuthGuard],
-  exports: [TodosService],
+  providers: [TodosService, FindAllTodosService],
 })
 export class TodosModule {}
