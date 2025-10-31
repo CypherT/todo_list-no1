@@ -20,6 +20,6 @@
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", ".eslintrc.js"],
+  "include": ["src/**/*.ts", "test/**/*.ts"], // Thêm test
   "exclude": ["node_modules", "dist"]
 }

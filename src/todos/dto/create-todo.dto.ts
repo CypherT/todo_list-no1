@@ -1,8 +1,8 @@
-import { IsString, IsNotEmpty, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
 
 export enum TodoStatus {
-  Incomplete = 0,
-  Complete = 1,
+  OPEN = 'OPEN',
+  DONE = 'DONE',
 }
 
 export class CreateTodoDto {
@@ -10,6 +10,7 @@ export class CreateTodoDto {
   @IsNotEmpty()
   title: string;
 
+  @IsOptional()
   @IsEnum(TodoStatus)
-  completed: TodoStatus;
+  completed?: TodoStatus; // Enum string
 }

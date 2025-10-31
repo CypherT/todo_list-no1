@@ -1,17 +1,14 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { ConfigService } from '@nestjs/config';
-import { join } from 'path';
 
-export const databaseConfig = (): TypeOrmModuleOptions => {
-  const configService = new ConfigService();
-  return {
-    type: 'mysql',
-    host: configService.get('DB_HOST') || 'localhost',
-    port: parseInt(configService.get('DB_PORT') || '3306'),
-    username: configService.get('DB_USERNAME') || 'root',
-    password: configService.get('DB_PASSWORD') || '',
-    database: configService.get('DB_DATABASE') || 'tododb',
-    entities: [join(__dirname, '../entities/*.entity{.ts,.js}')], // Auto-load từ entities/
-    synchronize: true,
-  };
-};
+export const databaseConfig = (): TypeOrmModuleOptions => ({
+  type: 'postgres', // Thay 'mysql' nếu dùng MySQL
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT, 10) || 5432,
+  username: process.env.DB_USERNAME || 'postgres',
+  password: process.env.DB_PASSWORD || 'password',
+  database: process.env.DB_NAME || 'todo_db',
+  entities: [__dirname + '/../**/*.entity{.ts,.js}'], // Tự động load entities (e.g., TodoEntity)
+  synchronize: process.env.NODE_ENV !== 'production', // Tắt ở production để tránh mất data
+  logging: ['query', 'error'], // Log queries cho debug
+  autoLoadEntities: true, // Tự load nếu dùng
+});

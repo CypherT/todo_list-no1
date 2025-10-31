@@ -3,6 +3,6 @@ import { WebsocketGateway } from './websocket.gateway';
 
 @Module({
   providers: [WebsocketGateway],
-  exports: [WebsocketGateway],
+  exports: [WebsocketGateway], // Export để dùng ở module khác nếu cần
 })
 export class WebsocketModule {}

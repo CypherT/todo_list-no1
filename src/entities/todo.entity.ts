@@ -1,7 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
-import { TodoStatus } from '../todos/dto/create-todo.dto';
 
-@Entity('todos')
+@Entity()
 export class Todo {
   @PrimaryGeneratedColumn()
   id: number;
@@ -9,8 +8,8 @@ export class Todo {
   @Column()
   title: string;
 
-  @Column({ type: 'enum', enum: TodoStatus, default: TodoStatus.Incomplete })
-  completed: TodoStatus;
+  @Column({ default: false })
+  completed: boolean; // Đảm bảo boolean
 
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
