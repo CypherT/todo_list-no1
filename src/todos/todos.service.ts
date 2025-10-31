@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Todo } from '../entities/todo.entity';
+import { Todo } from './entities/todo.entity';
 import { CreateTodoDto, TodoStatus } from './dto/create-todo.dto'; // Import TodoStatus từ DTO
 import { UpdateTodoDto } from './dto/update-todo.dto';
 

@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PassportModule } from '@nestjs/passport';
 import { TodosService } from './todos.service';
 import { TodosController } from './todos.controller';
-import { Todo } from '../entities/todo.entity';
+import { Todo } from './entities/todo.entity';
 import { WebsocketModule } from '../websocket/websocket.module';
 import { JwtStrategy } from '../auth/strategies/jwt.strategy';
 import { AuthModule } from '../auth/auth.module';
