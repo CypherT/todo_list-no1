@@ -7,174 +7,331 @@ import {
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
-import { RedisService } from '../redis/redis.service';
-// Import types cho Todo nếu cần (từ todos module)
-// import { Todo } from '../todos/entities/todo.entity';
+import { Server, WebSocket } from 'ws';
+import { Injectable } from '@nestjs/common';
+
+interface WebSocketMessage {
+  type: string;
+  data: any;
+}
+
+interface ClientInfo {
+  id: string;
+  userId?: number;
+  deviceName?: string;
+  connectedAt: string;
+  readyState: number;
+}
 
 /**
- * WebSocket Gateway xử lý real-time events cho chat và todo broadcasts.
- * Tích hợp Redis để track clients.
+ * WebSocket Gateway sử dụng Native WS (không Socket.IO)
+ * Quản lý đồng bộ Todo giữa các thiết bị của cùng 1 user
  */
-@WebSocketGateway({
-  cors: {
-    origin: '*',
-    credentials: true,
-  },
-})
+@Injectable()
+@WebSocketGateway()
 export class WebsocketGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
   server: Server;
 
-  // Event names constants
+  // Map lưu client connections: clientId -> { ws, userId, deviceName }
+  private clients = new Map<
+    string,
+    { ws: WebSocket; userId?: number; deviceName?: string }
+  >();
+
+  // Map lưu user connections: userId -> Set<clientIds>
+  private userConnections = new Map<number, Set<string>>();
+
   private readonly EVENTS = {
-    MESSAGE: 'message',
+    AUTH: 'auth',
     TODO_CREATED: 'todo:created',
     TODO_UPDATED: 'todo:updated',
     TODO_DELETED: 'todo:deleted',
-    CLIENTS_COUNT: 'clients:count',
-    CONNECTION: 'connection',
+    ERROR: 'error',
   } as const;
 
-  constructor(private readonly redisService: RedisService) {}
-
   /**
-   * Xử lý khi client kết nối.
+   * Xử lý khi client kết nối
    */
-  async handleConnection(client: Socket) {
-    console.log(`Client connected: ${client.id}`);
+  handleConnection(client: WebSocket) {
+    const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    const clientData = {
-      id: client.id,
-      connectedAt: new Date().toISOString(),
-    };
+    this.clients.set(clientId, { ws: client, userId: undefined });
 
-    // Lưu thông tin client vào Redis (hSet là hash set)
-    try {
-      await this.redisService.hSet(
-        'ws:clients',
-        client.id,
-        JSON.stringify(clientData),
-      );
-    } catch (error) {
-      console.warn(`Lỗi lưu client ${client.id} vào Redis:`, error);
-    }
+    console.log(`✅ Client connected: ${clientId}`);
 
-    // Gửi thông báo cho client
-    client.emit(this.EVENTS.CONNECTION, {
+    // Gửi clientId cho client để lưu
+    this.sendToClient(client, 'connection', {
       message: 'Connected to WebSocket server',
-      clientId: client.id,
+      clientId,
     });
 
-    // Broadcast số lượng client
-    await this.broadcastClientsCount();
+    // Gắn clientId vào object ws để dùng sau
+    (client as any).id = clientId;
   }
 
   /**
-   * Xử lý khi client ngắt kết nối.
+   * Xử lý khi client ngắt kết nối
    */
-  async handleDisconnect(client: Socket) {
-    console.log(`Client disconnected: ${client.id}`);
+  handleDisconnect(client: WebSocket) {
+    const clientId = (client as any).id;
 
-    // Xóa thông tin client khỏi Redis (hDel là hash delete)
-    try {
-      await this.redisService.hDel('ws:clients', client.id);
-    } catch (error) {
-      console.warn(`Lỗi xóa client ${client.id} từ Redis:`, error);
-    }
+    if (!clientId) return;
 
-    // Broadcast số lượng client còn lại
-    await this.broadcastClientsCount();
-  }
+    const clientInfo = this.clients.get(clientId);
 
-  /**
-   * Broadcast số lượng clients hiện tại.
-   */
-  private async broadcastClientsCount() {
-    try {
-      const clients = await this.redisService.hGetAll('ws:clients');
-      this.server.emit(this.EVENTS.CLIENTS_COUNT, {
-        count: Object.keys(clients).length,
-      });
-    } catch (error) {
-      console.warn('Lỗi lấy clients count từ Redis:', error);
-    }
-  }
-
-  /**
-   * Xử lý message từ client (chat).
-   */
-  @SubscribeMessage('message')
-  handleMessage(
-    @MessageBody() data: { message: string },
-    @ConnectedSocket() client: Socket,
-  ) {
-    console.log(`Message from ${client.id}:`, data);
-
-    // Validate message không rỗng
-    if (!data.message?.trim()) {
-      client.emit('error', { message: 'Message không được rỗng' });
+    if (!clientInfo) {
+      console.log(`❌ Client disconnected (not tracked): ${clientId}`);
       return;
     }
 
-    // Gửi lại message cho tất cả clients
-    this.server.emit(this.EVENTS.MESSAGE, {
-      clientId: client.id,
-      message: data.message,
-      timestamp: new Date().toISOString(),
+    const userId = clientInfo.userId;
+
+    console.log(
+      `❌ Client disconnected: ${clientId}, User: ${userId || 'not authenticated'}`,
+    );
+
+    // Xóa client khỏi danh sách
+    this.clients.delete(clientId);
+
+    // Xóa client khỏi user connections
+    if (userId) {
+      const userDevices = this.userConnections.get(userId);
+      if (userDevices) {
+        userDevices.delete(clientId);
+        if (userDevices.size === 0) {
+          this.userConnections.delete(userId);
+          console.log(`👤 User ${userId} has no more active devices`);
+        } else {
+          console.log(
+            `👤 User ${userId} still has ${userDevices.size} active device(s)`,
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Xác thực user - client gửi userId
+   * Message format: { type: 'auth', data: { userId: number, deviceName?: string } }
+   */
+  @SubscribeMessage('auth')
+  handleAuth(
+    @MessageBody() message: { type: string; data: any },
+    @ConnectedSocket() client: WebSocket,
+  ) {
+    const clientId = (client as any).id;
+    const { userId, deviceName } = message.data;
+
+    if (!userId || userId <= 0) {
+      this.sendToClient(client, this.EVENTS.ERROR, {
+        message: 'Invalid userId',
+      });
+      return;
+    }
+
+    // Cập nhật client info
+    const clientInfo = this.clients.get(clientId);
+    if (clientInfo) {
+      clientInfo.userId = userId;
+      clientInfo.deviceName = deviceName || `Device_${Date.now()}`;
+    }
+
+    // Thêm client vào user connections
+    if (!this.userConnections.has(userId)) {
+      this.userConnections.set(userId, new Set());
+    }
+    this.userConnections.get(userId)?.add(clientId);
+
+    console.log(
+      `🔐 User ${userId} authenticated | Device: ${deviceName || 'Unknown'} | Total devices: ${this.userConnections.get(userId)?.size}`,
+    );
+
+    // Gửi xác nhận
+    this.sendToClient(client, this.EVENTS.AUTH, {
+      success: true,
+      userId,
+      deviceName: deviceName || `Device_${Date.now()}`,
+      message: 'Authentication successful',
     });
   }
 
   /**
-   * Xử lý event todo created từ client (nếu cần).
+   * Xử lý todo được tạo - broadcast tới tất cả thiết bị của user
    */
   @SubscribeMessage('todo:created')
-  handleTodoCreated(@MessageBody() data: any) {
-    // Thay any bằng Todo nếu import
-    console.log('Todo created event received:', data);
-    // Broadcast khi có todo mới được tạo
-    this.server.emit(this.EVENTS.TODO_CREATED, data);
+  handleTodoCreated(
+    @MessageBody() message: { type: string; data: any },
+    @ConnectedSocket() client: WebSocket,
+  ) {
+    const clientId = (client as any).id;
+    const clientInfo = this.clients.get(clientId);
+
+    if (!clientInfo?.userId) {
+      this.sendToClient(client, this.EVENTS.ERROR, {
+        message: 'Not authenticated',
+      });
+      return;
+    }
+
+    const userId = clientInfo.userId;
+    const todo = message.data;
+
+    console.log(`📝 Todo created by user ${userId}:`, todo.title);
+
+    // Broadcast tới tất cả thiết bị của user
+    this.broadcastToUserDevices(userId, this.EVENTS.TODO_CREATED, todo);
   }
 
   /**
-   * Xử lý event todo updated từ client.
+   * Xử lý todo được cập nhật
    */
   @SubscribeMessage('todo:updated')
-  handleTodoUpdated(@MessageBody() data: any) {
-    // Thay any bằng Todo
-    console.log('Todo updated event received:', data);
-    // Broadcast khi có todo được cập nhật
-    this.server.emit(this.EVENTS.TODO_UPDATED, data);
+  handleTodoUpdated(
+    @MessageBody() message: { type: string; data: any },
+    @ConnectedSocket() client: WebSocket,
+  ) {
+    const clientId = (client as any).id;
+    const clientInfo = this.clients.get(clientId);
+
+    if (!clientInfo?.userId) {
+      this.sendToClient(client, this.EVENTS.ERROR, {
+        message: 'Not authenticated',
+      });
+      return;
+    }
+
+    const userId = clientInfo.userId;
+    const todo = message.data;
+
+    console.log(`✏️  Todo updated by user ${userId}:`, todo.title);
+
+    // Broadcast tới tất cả thiết bị của user
+    this.broadcastToUserDevices(userId, this.EVENTS.TODO_UPDATED, todo);
   }
 
   /**
-   * Xử lý event todo deleted từ client.
+   * Xử lý todo được xóa
    */
   @SubscribeMessage('todo:deleted')
-  handleTodoDeleted(@MessageBody() data: any) {
-    // Thay any bằng { id: number }
-    console.log('Todo deleted event received:', data);
-    // Broadcast khi có todo bị xóa
-    this.server.emit(this.EVENTS.TODO_DELETED, data);
+  handleTodoDeleted(
+    @MessageBody() message: { type: string; data: any },
+    @ConnectedSocket() client: WebSocket,
+  ) {
+    const clientId = (client as any).id;
+    const clientInfo = this.clients.get(clientId);
+
+    if (!clientInfo?.userId) {
+      this.sendToClient(client, this.EVENTS.ERROR, {
+        message: 'Not authenticated',
+      });
+      return;
+    }
+
+    const userId = clientInfo.userId;
+    const todoId = message.data.id;
+
+    console.log(`🗑️  Todo deleted by user ${userId}: ID ${todoId}`);
+
+    // Broadcast tới tất cả thiết bị của user
+    this.broadcastToUserDevices(userId, this.EVENTS.TODO_DELETED, {
+      id: todoId,
+    });
   }
 
-  // Methods để emit event từ service khác (ví dụ: TodosService)
-  emitTodoCreated(todo: any) {
-    // Thay any bằng Todo
-    console.log('Broadcasting todo created:', todo);
-    this.server.emit(this.EVENTS.TODO_CREATED, todo);
+  /**
+   * Emit từ service (TodosService gọi)
+   */
+  emitTodoCreated(todo: any, userId: number) {
+    console.log(`📤 Emitting todo created for user ${userId}`);
+    this.broadcastToUserDevices(userId, this.EVENTS.TODO_CREATED, todo);
   }
 
-  emitTodoUpdated(todo: any) {
-    // Thay any bằng Todo
-    console.log('Broadcasting todo updated:', todo);
-    this.server.emit(this.EVENTS.TODO_UPDATED, todo);
+  emitTodoUpdated(todo: any, userId: number) {
+    console.log(`📤 Emitting todo updated for user ${userId}`);
+    this.broadcastToUserDevices(userId, this.EVENTS.TODO_UPDATED, todo);
   }
 
-  emitTodoDeleted(todoId: number) {
-    console.log('Broadcasting todo deleted:', { id: todoId });
-    this.server.emit(this.EVENTS.TODO_DELETED, { id: todoId });
+  emitTodoDeleted(todoId: number, userId: number) {
+    console.log(`📤 Emitting todo deleted for user ${userId}`);
+    this.broadcastToUserDevices(userId, this.EVENTS.TODO_DELETED, {
+      id: todoId,
+    });
+  }
+
+  /**
+   * Broadcast message tới tất cả thiết bị của 1 user
+   */
+  private broadcastToUserDevices(userId: number, type: string, data: any) {
+    const userDevices = this.userConnections.get(userId);
+
+    if (!userDevices || userDevices.size === 0) {
+      console.log(`⚠️  No active devices for user ${userId}`);
+      return;
+    }
+
+    const message = JSON.stringify({ type, data });
+
+    userDevices.forEach((clientId) => {
+      const clientInfo = this.clients.get(clientId);
+      if (clientInfo?.ws.readyState === WebSocket.OPEN) {
+        clientInfo.ws.send(message);
+      }
+    });
+
+    console.log(
+      `📢 Broadcasted to ${userDevices.size} device(s) of user ${userId}`,
+    );
+  }
+
+  /**
+   * Gửi message tới một client cụ thể
+   */
+  private sendToClient(client: WebSocket, type: string, data: any) {
+    if (client.readyState === WebSocket.OPEN) {
+      const message = JSON.stringify({ type, data });
+      client.send(message);
+    }
+  }
+
+  /**
+   * Lấy số lượng thiết bị đang active của user
+   */
+  getUserDevicesCount(userId: number): number {
+    return this.userConnections.get(userId)?.size || 0;
+  }
+
+  /**
+   * Lấy thông tin tất cả client đang kết nối
+   */
+  getClientsInfo(): ClientInfo[] {
+    const result: ClientInfo[] = [];
+
+    this.clients.forEach((clientInfo, clientId) => {
+      result.push({
+        id: clientId,
+        userId: clientInfo.userId,
+        deviceName: clientInfo.deviceName,
+        connectedAt: new Date().toISOString(),
+        readyState: clientInfo.ws.readyState,
+      });
+    });
+
+    return result;
+  }
+
+  /**
+   * Lấy thông tin user connections
+   */
+  getUserConnections(): Record<number, string[]> {
+    const result: Record<number, string[]> = {};
+
+    this.userConnections.forEach((clientIds, userId) => {
+      result[userId] = Array.from(clientIds);
+    });
+
+    return result;
   }
 }
