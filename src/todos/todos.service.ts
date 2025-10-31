@@ -22,8 +22,22 @@ export class TodosService {
     return await this.todoRepository.save(todo);
   }
 
-  async findAll(): Promise<Todo[]> {
-    return await this.todoRepository.find();
+  async findAll(
+    page: number = 1,
+    limit: number = 30,
+  ): Promise<{ todos: Todo[]; total: number; page: number; limit: number }> {
+    const skip = (page - 1) * limit; // Tính offset (bỏ qua items trước page)
+    const [todos, total] = await this.todoRepository.findAndCount({
+      skip, // Bỏ qua (page-1)*limit items
+      take: limit, // Lấy limit items
+      order: { id: 'DESC' }, // Sort theo id giảm dần (optional, thay đổi nếu cần)
+    });
+    return {
+      todos,
+      total, // Tổng số items để client tính pages
+      page,
+      limit,
+    }; // Return metadata cho client
   }
 
   async findOne(id: number): Promise<Todo> {

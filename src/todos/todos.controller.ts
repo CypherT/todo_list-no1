@@ -22,7 +22,7 @@ export class TodosController {
 
   @Get()
   findAll() {
-    return this.todosService.findAll();
+    return this.todosService.findAll(); // Fix: Gọi không params, match service
   }
 
   @Get(':id')
