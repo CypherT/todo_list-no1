@@ -1,13 +1,12 @@
 import {
   WebSocketGateway,
   SubscribeMessage,
-  MessageBody,
   WebSocketServer,
   ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { Logger, UnauthorizedException } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Server, WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
@@ -25,6 +24,13 @@ interface TodoEvent {
   todo?: any;
   todoId?: number;
   userId: number;
+}
+
+interface JwtPayload {
+  sub: number; // Phải là 'number' để khớp với ClientInfo.userId
+  email: string;
+  iat: number;
+  exp: number;
 }
 
 @WebSocketGateway({ cors: true })
@@ -59,12 +65,12 @@ export class WebsocketGateway
       }
 
       // Verify JWT token
-      let payload: any;
+      let payload: JwtPayload;
       try {
         payload = await this.jwtService.verifyAsync(token, {
-          secret: process.env.JWT_SECRET || 'secretKey',
+          secret: String(process.env.JWT_SECRET) || 'secretKey',
         });
-      } catch (error) {
+      } catch {
         this.logger.warn('❌ Connection rejected: Invalid token');
         client.send(
           JSON.stringify({
@@ -140,7 +146,7 @@ export class WebsocketGateway
     this.sendToClient(client, 'pong', { timestamp: Date.now() });
   }
 
-  private sendToClient(client: WebSocket, type: string, data: any): void {
+  private sendToClient(client: WebSocket, type: string, data: unknown): void {
     if (client.readyState === 1) {
       // WebSocket.OPEN
       client.send(JSON.stringify({ type, data }));

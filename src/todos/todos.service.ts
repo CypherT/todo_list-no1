@@ -91,7 +91,7 @@ export class TodosService {
   }
 
   async remove(id: number, userId: number): Promise<void> {
-    const todo = await this.findOne(id, userId);
+    await this.findOne(id, userId);
     await this.todoRepository.delete({ id });
 
     // 🔥 Broadcast to all user's devices
