@@ -1,0 +1,5 @@
+export const RATE_LIMIT_CONFIG = {
+  TTL: 60000,
+  LIMIT: 100,
+  BLOCK_DURATION: 60000,
+};

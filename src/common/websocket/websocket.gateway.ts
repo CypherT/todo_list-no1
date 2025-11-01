@@ -27,7 +27,7 @@ interface TodoEvent {
 }
 
 interface JwtPayload {
-  sub: number; // Phải là 'number' để khớp với ClientInfo.userId
+  sub: number;
   email: string;
   iat: number;
   exp: number;
@@ -45,26 +45,29 @@ export class WebsocketGateway
 
   constructor(private readonly jwtService: JwtService) {}
 
-  async handleConnection(@ConnectedSocket() client: WebSocket, ...args: any[]) {
+  async handleConnection(
+    @ConnectedSocket() client: WebSocket,
+    ...args: any[]
+  ) {
     try {
-      // Extract token from query params
       const request = args[0] as IncomingMessage;
       const { query } = parse(request.url || '', true);
       const token = query.token as string;
 
       if (!token) {
         this.logger.warn('❌ Connection rejected: No token provided');
-        client.send(
-          JSON.stringify({
-            type: 'error',
-            data: { message: 'Token required in query params' },
-          }),
+        this.sendToClient(
+          client,
+          'error',
+          {
+            message: 'Token required in query params',
+          },
+          'e',
         );
         client.close();
         return;
       }
 
-      // Verify JWT token
       let payload: JwtPayload;
       try {
         payload = await this.jwtService.verifyAsync(token, {
@@ -72,17 +75,18 @@ export class WebsocketGateway
         });
       } catch {
         this.logger.warn('❌ Connection rejected: Invalid token');
-        client.send(
-          JSON.stringify({
-            type: 'error',
-            data: { message: 'Invalid or expired token' },
-          }),
+        this.sendToClient(
+          client,
+          'error',
+          {
+            message: 'Invalid or expired token',
+          },
+          'e',
         );
         client.close();
         return;
       }
 
-      // Store client info with userId
       const clientId = `${payload.sub}-${Date.now()}`;
       const clientInfo: ClientInfo = {
         ws: client,
@@ -96,19 +100,25 @@ export class WebsocketGateway
         `✅ Client connected: ${clientId} (User: ${payload.email})`,
       );
 
-      // Send welcome message
-      this.sendToClient(client, 'connected', {
-        message: 'Connected to WebSocket server',
-        clientId,
-        userId: payload.sub,
-      });
+      this.sendToClient(
+        client,
+        'connected',
+        {
+          message: 'Connected to WebSocket server',
+          clientId,
+          userId: payload.sub,
+        },
+        null,
+      );
     } catch (error) {
       this.logger.error('❌ Connection error:', error);
       client.close();
     }
   }
 
-  handleDisconnect(@ConnectedSocket() client: WebSocket) {
+  handleDisconnect(
+    @ConnectedSocket() client: WebSocket,
+  ) {
     let clientId: string | undefined;
     this.clients.forEach((info, id) => {
       if (info.ws === client) {
@@ -125,12 +135,11 @@ export class WebsocketGateway
     }
   }
 
-  // Broadcast todo event to all devices of a specific user
   broadcastToUser(userId: number, event: TodoEvent) {
     let sentCount = 0;
     this.clients.forEach((clientInfo) => {
       if (clientInfo.userId === userId && clientInfo.ws.readyState === 1) {
-        this.sendToClient(clientInfo.ws, 'todo_sync', event);
+        this.sendToClient(clientInfo.ws, 'todo_sync', event, 't');
         sentCount++;
       }
     });
@@ -140,20 +149,36 @@ export class WebsocketGateway
     );
   }
 
-  // Handle manual ping from client
   @SubscribeMessage('ping')
-  handlePing(@ConnectedSocket() client: WebSocket) {
-    this.sendToClient(client, 'pong', { timestamp: Date.now() });
+  handlePing(
+    @ConnectedSocket() client: WebSocket,
+  ) {
+    this.sendToClient(client, 'pong', { timestamp: Date.now() }, 't');
   }
 
-  private sendToClient(client: WebSocket, type: string, data: unknown): void {
+  private sendToClient(
+    client: WebSocket,
+    event: string,
+    data: unknown,
+    type: 't' | 'd' | 'e' | null = 't',
+  ): void {
     if (client.readyState === 1) {
-      // WebSocket.OPEN
-      client.send(JSON.stringify({ type, data }));
+      const message: { t?: string; d?: unknown; e?: unknown } = {};
+      if (type === 't') {
+        message.t = event;
+        message.d = data;
+      } else if (type === 'd') {
+        message.d = data;
+      } else if (type === 'e') {
+        message.e = data;
+      } else {
+        message.t = event;
+        message.d = data;
+      }
+      client.send(JSON.stringify(message));
     }
   }
 
-  // Get connected devices count for a user
   getUserDeviceCount(userId: number): number {
     let count = 0;
     this.clients.forEach((client) => {

@@ -1,5 +1,5 @@
 import { DynamicModule, Module } from '@nestjs/common';
-import { RedisService } from './redis.service'; // Giữ nếu có, hoặc tạo basic
+import { RedisService } from './redis.service';
 
 @Module({})
 export class RedisModule {
@@ -10,7 +10,7 @@ export class RedisModule {
       providers: [
         {
           provide: 'REDIS_OPTIONS',
-          useValue: options, // Fix: No any[], direct value
+          useValue: options,
         },
         RedisService,
       ],
@@ -19,7 +19,6 @@ export class RedisModule {
   }
 
   static forRootAsync(): DynamicModule {
-    // Fix: Simple no options, no unsafe call
     return {
       module: RedisModule,
       global: true,

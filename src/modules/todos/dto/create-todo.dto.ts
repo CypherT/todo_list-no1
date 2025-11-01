@@ -12,5 +12,5 @@ export class CreateTodoDto {
 
   @IsOptional()
   @IsEnum(TodoStatus)
-  completed?: TodoStatus; // Enum string
+  completed?: TodoStatus;
 }

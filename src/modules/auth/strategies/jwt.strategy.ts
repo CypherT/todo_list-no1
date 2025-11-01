@@ -4,13 +4,8 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User } from '../../auth/entities/user.entity';
-
-interface JwtPayload {
-  sub: number;
-  email: string;
-  role: string;
-}
+import { User } from '../entities/user.entity';
+import { JwtPayload } from '../interface/jwtPayload';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -27,7 +22,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload): Promise<User> {
-    // Return full User object để CurrentUser decorator có thể lấy
     const user = await this.userRepository.findOne({
       where: { id: payload.sub },
     });
@@ -36,6 +30,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new Error('User not found');
     }
 
-    return user; // Passport tự động gán vào request.user
+    return user;
   }
 }

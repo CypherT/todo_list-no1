@@ -5,7 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { User } from '../auth/entities/user.entity';
+import { User } from './entities/user.entity';
 
 @Module({
   imports: [
@@ -18,6 +18,6 @@ import { User } from '../auth/entities/user.entity';
   ],
   providers: [AuthService, JwtStrategy],
   controllers: [AuthController],
-  exports: [AuthService, JwtStrategy, PassportModule, TypeOrmModule], // Export để dùng ở module khác
+  exports: [AuthService, JwtStrategy, PassportModule, TypeOrmModule],
 })
 export class AuthModule {}

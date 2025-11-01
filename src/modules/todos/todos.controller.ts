@@ -17,12 +17,15 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../auth/entities/user.entity';
 
 @Controller('todos')
-@UseGuards(JwtAuthGuard) // Bảo vệ tất cả routes với JWT
+@UseGuards(JwtAuthGuard)
 export class TodosController {
   constructor(private readonly todosService: TodosService) {}
 
   @Post()
-  create(@Body() createTodoDto: CreateTodoDto, @CurrentUser() user: User) {
+  create(
+    @Body() createTodoDto: CreateTodoDto,
+    @CurrentUser() user: User,
+  ) {
     return this.todosService.create(createTodoDto, user.id);
   }
 
@@ -32,13 +35,16 @@ export class TodosController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    const pageNum = page ? parseInt(page, 10) : 1;
-    const limitNum = limit ? parseInt(limit, 10) : 30;
+    const pageNum = page ? Number(page) : 1;
+    const limitNum = limit ? Number(limit) : 30;
     return this.todosService.findAll(user.id, pageNum, limitNum);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string, @CurrentUser() user: User) {
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ) {
     return this.todosService.findOne(+id, user.id);
   }
 
@@ -52,7 +58,10 @@ export class TodosController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string, @CurrentUser() user: User) {
+  remove(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ) {
     return this.todosService.remove(+id, user.id);
   }
 }

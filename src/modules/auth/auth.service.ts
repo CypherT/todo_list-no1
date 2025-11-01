@@ -7,18 +7,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { User } from '../auth/entities/user.entity';
+import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
+import { JwtPayload } from './interface/jwtPayload';
 
 export interface AuthTokens {
   access_token: string;
   refresh_token: string;
-}
-
-interface JwtPayload {
-  sub: number;
-  email: string;
-  role: string;
 }
 
 @Injectable()
@@ -91,7 +86,7 @@ export class AuthService {
   }
 
   private async generateTokens(user: User): Promise<AuthTokens> {
-    const payload: JwtPayload = {
+    const payload: Omit<JwtPayload, 'iat' | 'exp'> = {
       sub: user.id,
       email: user.email,
       role: user.role,

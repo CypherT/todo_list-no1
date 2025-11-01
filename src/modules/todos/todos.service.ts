@@ -4,7 +4,12 @@ import { Repository } from 'typeorm';
 import { Todo } from './entities/todo.entity';
 import { CreateTodoDto, TodoStatus } from './dto/create-todo.dto';
 import { UpdateTodoDto } from './dto/update-todo.dto';
-import { WebsocketGateway } from '../websocket/websocket.gateway';
+import { WebsocketGateway } from '../../common/websocket/websocket.gateway';
+import {
+  getPagination,
+  buildPagination,
+} from '../../common/utils/pagination.helper';
+import { Pagination } from '../../common/interfaces/pagination.interface';
 
 @Injectable()
 export class TodosService {
@@ -18,13 +23,12 @@ export class TodosService {
     const todoData: Partial<Todo> = {
       title: createTodoDto.title,
       completed: createTodoDto.completed === TodoStatus.DONE,
-      userId, // Thêm userId vào todo
+      userId,
     };
 
     const todo = this.todoRepository.create(todoData);
     const savedTodo = await this.todoRepository.save(todo);
 
-    // 🔥 Broadcast to all user's devices
     this.websocketGateway.broadcastToUser(userId, {
       action: 'created',
       todo: savedTodo,
@@ -38,21 +42,16 @@ export class TodosService {
     userId: number,
     page: number = 1,
     limit: number = 30,
-  ): Promise<{ todos: Todo[]; total: number; page: number; limit: number }> {
-    const skip = (page - 1) * limit;
+  ): Promise<Pagination<Todo>> {
+    const { pageNum, limitNum, skip, take } = getPagination(page, limit);
     const [todos, total] = await this.todoRepository.findAndCount({
-      where: { userId }, // Chỉ lấy todo của user hiện tại
+      where: { userId },
       skip,
-      take: limit,
+      take,
       order: { id: 'DESC' },
     });
 
-    return {
-      todos,
-      total,
-      page,
-      limit,
-    };
+    return buildPagination(todos, total, pageNum, limitNum);
   }
 
   async findOne(id: number, userId: number): Promise<Todo> {
@@ -68,19 +67,32 @@ export class TodosService {
     updateTodoDto: UpdateTodoDto,
     userId: number,
   ): Promise<Todo> {
-    const todo = await this.findOne(id, userId);
-
-    Object.assign(todo, {
-      title: updateTodoDto.title ?? todo.title,
+    const updateData: Partial<Todo> = {
+      title: updateTodoDto.title,
       completed:
         updateTodoDto.completed !== undefined
           ? updateTodoDto.completed === TodoStatus.DONE
-          : todo.completed,
-    });
+          : undefined,
+    };
 
-    const updatedTodo = await this.todoRepository.save(todo);
+    Object.keys(updateData).forEach(
+      (key) => updateData[key] === undefined && delete updateData[key],
+    );
 
-    // 🔥 Broadcast to all user's devices
+    const updateResult = await this.todoRepository.update(
+      { id, userId },
+      updateData,
+    );
+
+    if (updateResult.affected === 0) {
+      throw new NotFoundException(`Todo #${id} not found`);
+    }
+
+    const updatedTodo = await this.todoRepository.findOneBy({ id, userId });
+    if (!updatedTodo) {
+      throw new NotFoundException(`Todo #${id} not found`);
+    }
+
     this.websocketGateway.broadcastToUser(userId, {
       action: 'updated',
       todo: updatedTodo,
@@ -91,10 +103,12 @@ export class TodosService {
   }
 
   async remove(id: number, userId: number): Promise<void> {
-    await this.findOne(id, userId);
-    await this.todoRepository.delete({ id });
+    const deleteResult = await this.todoRepository.delete({ id, userId });
 
-    // 🔥 Broadcast to all user's devices
+    if (deleteResult.affected === 0) {
+      throw new NotFoundException(`Todo #${id} not found`);
+    }
+
     this.websocketGateway.broadcastToUser(userId, {
       action: 'deleted',
       todoId: id,
