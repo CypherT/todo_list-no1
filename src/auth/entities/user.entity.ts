@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
+import { Todo } from '../../todos/entities/todo.entity';
 
 @Entity('users')
 export class User {
@@ -13,4 +14,10 @@ export class User {
 
   @Column({ default: 'user' })
   role: string;
+
+  @OneToMany(() => Todo, (todo) => todo.user)
+  todos: Todo[];
+
+  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  createdAt: Date;
 }

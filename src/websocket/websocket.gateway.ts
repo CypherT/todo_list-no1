@@ -7,15 +7,24 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
-import { Server, WebSocket } from 'ws'; // Import types chuẩn từ 'ws' (cài @types/ws nếu chưa)
+import { Logger, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { Server, WebSocket } from 'ws';
+import { IncomingMessage } from 'http';
+import { parse } from 'url';
 
 interface ClientInfo {
   ws: WebSocket;
-  userId?: number;
-  deviceName?: string;
+  userId: number;
+  email: string;
   id: string;
+}
+
+interface TodoEvent {
+  action: 'created' | 'updated' | 'deleted';
+  todo?: any;
+  todoId?: number;
+  userId: number;
 }
 
 @WebSocketGateway({ cors: true })
@@ -23,25 +32,74 @@ export class WebsocketGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
-  server!: Server; // Type Server từ 'ws' – no error type
+  server!: Server;
 
   private clients = new Map<string, ClientInfo>();
   private readonly logger = new Logger(WebsocketGateway.name);
 
-  handleConnection(@ConnectedSocket() client: WebSocket) {
-    const clientId = uuidv4();
-    const clientInfo: ClientInfo = {
-      ws: client, // Assign an toàn với WebSocket type
-      id: clientId,
-      userId: undefined,
-      deviceName: undefined,
-    };
-    this.clients.set(clientId, clientInfo);
-    this.logger.log(`✅ Client connected: ${clientId}`);
-    this.sendToClient(client, 'connection', {
-      message: 'Connected to WebSocket server',
-      clientId,
-    });
+  constructor(private readonly jwtService: JwtService) {}
+
+  async handleConnection(@ConnectedSocket() client: WebSocket, ...args: any[]) {
+    try {
+      // Extract token from query params
+      const request = args[0] as IncomingMessage;
+      const { query } = parse(request.url || '', true);
+      const token = query.token as string;
+
+      if (!token) {
+        this.logger.warn('❌ Connection rejected: No token provided');
+        client.send(
+          JSON.stringify({
+            type: 'error',
+            data: { message: 'Token required in query params' },
+          }),
+        );
+        client.close();
+        return;
+      }
+
+      // Verify JWT token
+      let payload: any;
+      try {
+        payload = await this.jwtService.verifyAsync(token, {
+          secret: process.env.JWT_SECRET || 'secretKey',
+        });
+      } catch (error) {
+        this.logger.warn('❌ Connection rejected: Invalid token');
+        client.send(
+          JSON.stringify({
+            type: 'error',
+            data: { message: 'Invalid or expired token' },
+          }),
+        );
+        client.close();
+        return;
+      }
+
+      // Store client info with userId
+      const clientId = `${payload.sub}-${Date.now()}`;
+      const clientInfo: ClientInfo = {
+        ws: client,
+        id: clientId,
+        userId: payload.sub,
+        email: payload.email,
+      };
+
+      this.clients.set(clientId, clientInfo);
+      this.logger.log(
+        `✅ Client connected: ${clientId} (User: ${payload.email})`,
+      );
+
+      // Send welcome message
+      this.sendToClient(client, 'connected', {
+        message: 'Connected to WebSocket server',
+        clientId,
+        userId: payload.sub,
+      });
+    } catch (error) {
+      this.logger.error('❌ Connection error:', error);
+      client.close();
+    }
   }
 
   handleDisconnect(@ConnectedSocket() client: WebSocket) {
@@ -51,36 +109,50 @@ export class WebsocketGateway
         clientId = id;
       }
     });
+
     if (clientId) {
+      const clientInfo = this.clients.get(clientId);
       this.clients.delete(clientId);
-      this.logger.log(`🔌 Client disconnected: ${clientId}`);
+      this.logger.log(
+        `🔌 Client disconnected: ${clientId} (User: ${clientInfo?.email})`,
+      );
     }
   }
 
-  @SubscribeMessage('message')
-  handleMessage(@MessageBody() data: unknown) {
-    // No unused client
-    this.logger.log(`📨 Received: ${JSON.stringify(data)}`);
-    // Guard chặt: Check server tồn tại + clients là Set
-    if (
-      !this.server ||
-      !this.server.clients ||
-      this.server.clients.size === 0
-    ) {
-      return; // Early return nếu không ready
-    }
-    this.server.clients.forEach((c: WebSocket) => {
-      // forEach an toàn trên Set<WebSocket>
-      if (c.readyState === WebSocket.OPEN) {
-        // readyState trên WebSocket type
-        this.sendToClient(c, 'broadcast', data);
+  // Broadcast todo event to all devices of a specific user
+  broadcastToUser(userId: number, event: TodoEvent) {
+    let sentCount = 0;
+    this.clients.forEach((clientInfo) => {
+      if (clientInfo.userId === userId && clientInfo.ws.readyState === 1) {
+        this.sendToClient(clientInfo.ws, 'todo_sync', event);
+        sentCount++;
       }
     });
+
+    this.logger.log(
+      `📤 Broadcast to user ${userId}: ${event.action} (${sentCount} devices)`,
+    );
   }
 
-  private sendToClient(client: WebSocket, type: string, data: unknown): void {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify({ type, data })); // send() an toàn trên WebSocket
+  // Handle manual ping from client
+  @SubscribeMessage('ping')
+  handlePing(@ConnectedSocket() client: WebSocket) {
+    this.sendToClient(client, 'pong', { timestamp: Date.now() });
+  }
+
+  private sendToClient(client: WebSocket, type: string, data: any): void {
+    if (client.readyState === 1) {
+      // WebSocket.OPEN
+      client.send(JSON.stringify({ type, data }));
     }
+  }
+
+  // Get connected devices count for a user
+  getUserDeviceCount(userId: number): number {
+    let count = 0;
+    this.clients.forEach((client) => {
+      if (client.userId === userId) count++;
+    });
+    return count;
   }
 }
